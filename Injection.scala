@@ -1,3 +1,4 @@
+//>>scalac Onyx.scala Injection.scala; scala onyx.Onyx
 package onyx
 
 import collection.JavaConverters._
@@ -10,11 +11,38 @@ import java.applet.{ Applet, AppletStub }
 import java.io.{ FileOutputStream, File }
 import java.net.{ URL, URLClassLoader }
 
-case class Hook(obf: String, tmethod: Method, mult: String){
-	val Array(obfClass, obfField) = obf.split('.')
-	val interface = tmethod.getDeclaringClass.getName
-	val method = tmethod.getName
-	val multiplier = mult.toInt
+/* new Hook("Character", "localX", "bc", "k") */
+class Hook(
+	val interface: String,
+	val name: String,
+	val clazz: String,
+	val field: String){
+
+	def inject(client: ClassNode, nodes: List[ClassNode]){
+		val cn = nodes.find(_.name == clazz).get
+		val fn = cn.fields.asScala.find(_.name == field).get
+		val mn = new MethodNode(ACC_PUBLIC, name, "()" + fn.desc, null, null)
+		val ins = mn.instructions
+
+		if(Modifier.isStatic(fn.access)){
+			client.methods.add(mn)
+			ins.add(new FieldInsnNode(GETSTATIC, clazz, field, fn.desc))
+		} else {
+			cn.methods.add(mn)
+			ins.add(new VarInsnNode(ALOAD, 0))
+			ins.add(new FieldInsnNode(GETFIELD, clazz, field, fn.desc))
+		}
+
+		ins.add(new InsnNode(
+			fn.desc.charAt(0) match {
+				case 'J' => LRETURN
+				case 'F' => FRETURN
+				case 'D' => DRETURN
+				case 'L'|'[' => ARETURN
+				case 'I'|'Z'|'B'|'C'|'S' => IRETURN
+			})
+		)
+	}
 }
 
 object Injection {
@@ -24,36 +52,10 @@ object Injection {
 		val nodes = loadClasses(jar)
 		jar.close()
 
-		hooks.foreach(h => addHook(nodes, h))
+		val client = nodes.find(_.name == "client").get
+		hooks.foreach(_.inject(client, nodes))
 
 		writeJar("injected.jar", nodes)
-	}
-	private def addHook(nodes: List[ClassNode], hook: Hook){
-		/*val cn = nodes.find(_.name == hook.obfClass).get
-		if(!cn.interfaces.contains(hook.interface))
-			cn.interfaces.add(hook.interface)
-
-		val mn = new MethodNode(ACC_PUBLIC, m.name, "()" + m.cast, null, null)
-		val ins = mn.instructions
-
-		if(Modifier.isStatic(cn.fields.find(_.name == m.id).get.access)){
-			ins.add(new FieldInsnNode(GETSTATIC, m.clazz, m.id, m.actual))
-		} else {
-			ins.add(new VarInsnNode(ALOAD, 0))
-			ins.add(new FieldInsnNode(GETFIELD, m.clazz, m.id, m.actual))
-		}
-		if(m.actual != m.cast)
-			ins.add(new TypeInsnNode(CHECKCAST, m.cast))
-
-		ins.add(new InsnNode(
-			m.cast.charAt(0) match {
-				case 'J' => LRETURN
-				case 'F' => FRETURN
-				case 'D' => DRETURN
-				case 'L'|'[' => ARETURN
-				case 'I'|'Z'|'B'|'C'|'S' => IRETURN
-			}))
-		cn.methods.add(mn)*/
 	}
 	private def loadClasses(jar: JarFile) = {
 		jar.entries.asScala.filter(_.getName.endsWith(".class")).map(e => {
@@ -65,10 +67,10 @@ object Injection {
 	}
 	private def writeJar(file: String, nodes: List[ClassNode]){
 		val out = new JarOutputStream(new FileOutputStream(new File(file)))
-		nodes.foreach(n => {
-			out.putNextEntry(new JarEntry(n.name + ".class"))
+		nodes.foreach(node => {
+			out.putNextEntry(new JarEntry(node.name + ".class"))
 			val cw = new ClassWriter(ClassWriter.COMPUTE_MAXS)
-			n.accept(cw)
+			node.accept(cw)
 			out.write(cw.toByteArray)
 		})
 		out.close()
