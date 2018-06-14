@@ -1,4 +1,3 @@
-//>>scalac Onyx.scala Injection.scala; scala onyx.Onyx
 package onyx
 
 import collection.JavaConverters._
@@ -11,15 +10,21 @@ import java.applet.{ Applet, AppletStub }
 import java.io.{ FileOutputStream, File }
 import java.net.{ URL, URLClassLoader }
 
-/* new Hook("Character", "localX", "bc", "k") */
-class Hook(
+class ClassHook(
 	val interface: String,
+	val clazz: String){
+
+	def inject(nodes: Map[String,ClassNode]){
+		nodes(clazz).interfaces.add("onyx/" + interface)
+	}
+}
+class FieldHook(
 	val name: String,
 	val clazz: String,
 	val field: String){
 
-	def inject(client: ClassNode, nodes: List[ClassNode]){
-		val cn = nodes.find(_.name == clazz).get
+	def inject(client: ClassNode, nodes: Map[String,ClassNode]){
+		val cn = nodes(clazz)
 		val fn = cn.fields.asScala.find(_.name == field).get
 		val mn = new MethodNode(ACC_PUBLIC, name, "()" + fn.desc, null, null)
 		val ins = mn.instructions
@@ -47,25 +52,37 @@ class Hook(
 
 object Injection {
 
-	def apply(hooks: List[Hook]){
+	def apply(classes: Iterable[ClassHook], fields: Iterable[FieldHook]){
 		val jar = new JarFile("gamepack.jar")
 		val nodes = loadClasses(jar)
 		jar.close()
 
-		val client = nodes.find(_.name == "client").get
-		hooks.foreach(_.inject(client, nodes))
+		println(findCanvas(nodes.values))
 
-		writeJar("injected.jar", nodes)
+		val client = nodes("client")
+		classes.foreach(_.inject(nodes))
+		fields.foreach(_.inject(client, nodes))
+
+		writeJar("injected.jar", nodes.values)
+	}
+	private def findCanvas(nodes: Iterable[ClassNode]): String = {
+
+		val canvas = nodes.foreach(cn => {
+			val field = cn.fields.asScala.find(_.desc == "Ljava/awt/Canvas;")
+			if(field != None)
+				return cn.name + "." + field.get.name
+		})
+		return ""
 	}
 	private def loadClasses(jar: JarFile) = {
 		jar.entries.asScala.filter(_.getName.endsWith(".class")).map(e => {
 			val reader = new ClassReader(jar.getInputStream(e))
 			val node = new ClassNode
 			reader.accept(node, 0)
-			node
-		}).toList
+			(node.name -> node)
+		}).toMap
 	}
-	private def writeJar(file: String, nodes: List[ClassNode]){
+	private def writeJar(file: String, nodes: Iterable[ClassNode]){
 		val out = new JarOutputStream(new FileOutputStream(new File(file)))
 		nodes.foreach(node => {
 			out.putNextEntry(new JarEntry(node.name + ".class"))

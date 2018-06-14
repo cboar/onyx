@@ -10,34 +10,41 @@ import java.awt.Dimension
 object Onyx extends App {
 	System.setProperty("user.home", "/home/boar/.jagex")
 
+	Injection(
+		List(new ClassHook("Client", "client")),
+		List(new FieldHook("canvas", "aj", "an"))
+	)
+
 	private val frame = new JFrame
 	private val dim = new Dimension(815, 736)
 	frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE)
 	frame.getContentPane.setPreferredSize(dim)
 	frame.setLocation(25, 25)
-	frame.setVisible(true)
+	frame.setResizable(false)
 
-	private var applet = load()
+	private var client = load()
 	start()
 
 	def reload(){
-		frame.remove(applet)
-		applet.destroy()
-		applet = load()
+		frame.remove(client)
+		client.destroy()
+		client = load()
 		start()
 	}
 	private def start(){
-		frame.add(applet)
+		frame.add(client)
 		frame.pack()
-		applet.init()
-		applet.start()
+		frame.setVisible(true)
+		client.init()
+		client.start()
 	}
 	private def load() = {
-		val loader = new URLClassLoader(Array(new URL("file:gamepack.jar")))
-		val applet = loader.loadClass("client").newInstance.asInstanceOf[Applet]
-		applet.setStub(new Stub)
-		applet.setSize(dim)
-		applet
+		val jar = Array(new URL("file:injected.jar"))
+		val loader = new URLClassLoader(jar, Thread.currentThread().getContextClassLoader())
+		val client = loader.loadClass("client").newInstance.asInstanceOf[Client]
+		client.setStub(new Stub)
+		client.setSize(dim)
+		client
 	}
 }
 
