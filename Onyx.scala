@@ -10,10 +10,12 @@ import java.awt.Dimension
 object Onyx extends App {
 	System.setProperty("user.home", "/home/boar/.jagex")
 
-	Injection(
+	private val gamepack = new Gamepack("gamepack.jar")
+	gamepack.inject(
 		List(new ClassHook("Client", "client")),
 		List(new FieldHook("canvas", "aj", "an"))
 	)
+	gamepack.write("injected.jar")
 
 	private val frame = new JFrame
 	private val dim = new Dimension(815, 736)
@@ -40,7 +42,7 @@ object Onyx extends App {
 	}
 	private def load() = {
 		val jar = Array(new URL("file:injected.jar"))
-		val loader = new URLClassLoader(jar, Thread.currentThread().getContextClassLoader())
+		val loader = new URLClassLoader(jar, Thread.currentThread.getContextClassLoader)
 		val client = loader.loadClass("client").newInstance.asInstanceOf[Client]
 		client.setStub(new Stub)
 		client.setSize(dim)
@@ -59,7 +61,7 @@ class Stub extends AppletStub {
 	def getDocumentBase() = base
 	def getParameter(s: String) = params(s)
 
+	def appletResize(x: Int, y: Int){}
 	def getAppletContext() = null
 	def isActive() = false
-	def appletResize(x: Int, y: Int){}
 }

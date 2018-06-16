@@ -50,41 +50,25 @@ class FieldHook(
 	}
 }
 
-object Injection {
+class Gamepack(in: String){
 
-	def apply(classes: Iterable[ClassHook], fields: Iterable[FieldHook]){
-		val jar = new JarFile("gamepack.jar")
-		val nodes = loadClasses(jar)
-		jar.close()
+	private val jar = new JarFile(in)
+	val nodes = jar.entries.asScala.filter(_.getName.endsWith(".class")).map(e => {
+		val reader = new ClassReader(jar.getInputStream(e))
+		val node = new ClassNode
+		reader.accept(node, 0)
+		(node.name -> node)
+	}).toMap
+	jar.close()
 
-		println(findCanvas(nodes.values))
-
+	def inject(classes: Iterable[ClassHook], fields: Iterable[FieldHook]){
 		val client = nodes("client")
 		classes.foreach(_.inject(nodes))
 		fields.foreach(_.inject(client, nodes))
-
-		writeJar("injected.jar", nodes.values)
 	}
-	private def findCanvas(nodes: Iterable[ClassNode]): String = {
-
-		val canvas = nodes.foreach(cn => {
-			val field = cn.fields.asScala.find(_.desc == "Ljava/awt/Canvas;")
-			if(field != None)
-				return cn.name + "." + field.get.name
-		})
-		return ""
-	}
-	private def loadClasses(jar: JarFile) = {
-		jar.entries.asScala.filter(_.getName.endsWith(".class")).map(e => {
-			val reader = new ClassReader(jar.getInputStream(e))
-			val node = new ClassNode
-			reader.accept(node, 0)
-			(node.name -> node)
-		}).toMap
-	}
-	private def writeJar(file: String, nodes: Iterable[ClassNode]){
+	def write(file: String){
 		val out = new JarOutputStream(new FileOutputStream(new File(file)))
-		nodes.foreach(node => {
+		nodes.values.foreach(node => {
 			out.putNextEntry(new JarEntry(node.name + ".class"))
 			val cw = new ClassWriter(ClassWriter.COMPUTE_MAXS)
 			node.accept(cw)
